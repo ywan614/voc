@@ -1,0 +1,224 @@
+[
+  {
+    "source_review_id": "R10I96XZNOPP00",
+    "text": "Would not buy again due to durability",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Would not buy again due to durability",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "耐穿性",
+          "sentiment": "负面",
+          "detail": "因耐穿性问题不再购买",
+          "behavior": "不再购买",
+          "behavior_status": "意向",
+          "behavior_reason": "耐穿性差"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R11T7ASNIMOLS0",
+    "text": "Not the socks for me too thin",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Not the socks for me too thin",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "面料",
+          "sentiment": "负面",
+          "detail": "太薄，不符合个人需求"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R11159CBXQ9CUM",
+    "text": "Not cushioned, mush too thin.\nNot a good product.",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Not cushioned, mush too thin.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "面料",
+          "sentiment": "负面",
+          "detail": "面料太薄"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Not cushioned, mush too thin.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "设计与功能",
+          "sentiment": "负面",
+          "detail": "缺少缓冲"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Not a good product.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "整体评价",
+          "sentiment": "负面",
+          "detail": "整体评价不好"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R10B0WAE663W37",
+    "text": "I don’t like the material\nI wish there was less material for no show\nthey didn’t stay on my heel",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "I don’t like the material",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "面料",
+          "sentiment": "负面",
+          "detail": "不喜欢面料"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "I wish there was less material for no show",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "设计与功能",
+          "sentiment": "负面",
+          "detail": "希望减少覆盖以不露袜",
+          "unmet_need": "减少覆盖以实现不露袜"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "they didn’t stay on my heel",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "设计与功能",
+          "sentiment": "负面",
+          "detail": "穿着时掉跟"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R10NM49I4BTBTU",
+    "text": "Purchased multiple packs of socks at different times.\nWill definitely purchase more in the future",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Purchased multiple packs of socks at different times.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "detail": "已多次购买",
+          "behavior": "复购",
+          "behavior_status": "已发生"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "Will definitely purchase more in the future",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "detail": "打算继续购买",
+          "behavior": "复购",
+          "behavior_status": "意向"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R104HVOJ0N4STS",
+    "text": "These while they do stretch to my foot are tight.\nThey would be comfy if they were a little larger as there is minimal seam on the inside of the sock.",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "These while they do stretch to my foot are tight.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "尺码与贴合",
+          "sentiment": "负面",
+          "detail": "能伸展到脚型但偏紧"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "They would be comfy if they were a little larger as there is minimal seam on the inside of the sock.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "预期",
+          "topic": "舒适度",
+          "detail": "期待尺码更大时穿着舒适"
+        }
+      }
+    ]
+  },
+  {
+    "source_review_id": "R12FK3M25KB32E",
+    "text": "She did say it was too stiff to sleep in\nbut likes the fit and look for everyday wear.",
+    "extractions": [
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "She did say it was too stiff to sleep in",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "舒适度",
+          "sentiment": "负面",
+          "detail": "女儿觉得太硬不适合睡觉穿",
+          "scene": [
+            "居家睡眠"
+          ],
+          "subject": "女儿"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "but likes the fit and look for everyday wear.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "尺码与贴合",
+          "sentiment": "正面",
+          "detail": "女儿喜欢日常穿着的贴合度",
+          "scene": [
+            "日常穿着"
+          ],
+          "subject": "女儿"
+        }
+      },
+      {
+        "extraction_class": "review_insight",
+        "extraction_text": "but likes the fit and look for everyday wear.",
+        "attributes": {
+          "journey": "购买后",
+          "evidence_type": "实际体验",
+          "topic": "设计与功能",
+          "sentiment": "正面",
+          "detail": "女儿喜欢日常穿着的外观",
+          "scene": [
+            "日常穿着"
+          ],
+          "subject": "女儿"
+        }
+      }
+    ]
+  }
+]
