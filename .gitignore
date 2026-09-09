@@ -3,4 +3,5 @@
 __pycache__/
 *.pyc
 config.ini
+data/**/*.csv
 data/tagging_runs/

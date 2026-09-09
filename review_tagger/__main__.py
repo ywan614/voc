@@ -10,7 +10,7 @@ from .run_logging import RunLog, error_details
 
 from .config import load_settings
 from .model import create_model
-from .pipeline import load_examples, read_reviews, tag_review
+from .pipeline import load_examples, read_reviews, tag_review, write_tagged_csv
 from .prompts import build_prompt
 from .usage import summarize_usage
 
@@ -39,7 +39,7 @@ def main():
     except OSError as exc:
         print(f"无法创建运行目录：{output} ({type(exc).__name__})", file=sys.stderr)
         return 2
-    if any((output / name).exists() for name in ("reviews.jsonl", "run.log", "events.jsonl", "run_summary.json")):
+    if any((output / name).exists() for name in ("reviews.csv", "reviews.jsonl", "run.log", "events.jsonl", "run_summary.json")):
         print(f"运行目录已有结果或日志，请使用新目录：{output}", file=sys.stderr)
         return 2
     try:
@@ -65,7 +65,10 @@ def run_batch(args, output, run):
         raise ValueError("--last 必须大于 0")
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(2**32)
     try:
-        rows = read_reviews(args.input)
+        all_rows = read_reviews(args.input)
+        rows = all_rows
+        if rows and "all_tags" in rows[0]:
+            raise ValueError("输入已包含 all_tags 列，请使用原始 CSV")
         if not rows:
             raise ValueError("输入 CSV 没有评论")
         if args.limit:
@@ -92,6 +95,8 @@ def run_batch(args, output, run):
     if args.dry_run:
         print(f"检查通过：{len(rows)} 条评论，{len(examples)} 个示例；未调用 API。")
         return 0
+    csv_records = {}
+    write_tagged_csv(output / "reviews.csv", all_rows, csv_records)
     # Exclusive creation prevents accidental overwrite; flush after every review.
     with (output / "reviews.jsonl").open("x", encoding="utf-8") as stream:
         model = create_model(settings, enable_thinking=False if args.no_thinking else None)
@@ -125,6 +130,8 @@ def run_batch(args, output, run):
                 print(f"需复核 review_id={row['review_id']}: {json.dumps(rejected, ensure_ascii=False)}", file=sys.stderr)
             stream.write(json.dumps(run.clean(record), ensure_ascii=False) + "\n")
             stream.flush()
+            csv_records[row["review_id"]] = record
+            write_tagged_csv(output / "reviews.csv", all_rows, csv_records)
             run.event("review_finished", index=index, status=record["status"],
                       duration_seconds=record["duration_seconds"], usage=record["usage"],
                       accepted_count=len(record["insights"]), rejected_count=len(record["rejected"]))
@@ -142,7 +149,7 @@ def run_batch(args, output, run):
             temporary.replace(output / "run_summary.json")
             print(f"[{index}/{len(rows)}] review_id={row['review_id']} {record['status']} tokens={record['usage']['total_tokens']}", flush=True)
     run.review_id = None
-    print(f"结果：{output / 'reviews.jsonl'}；需检查 {failures} 条")
+    print(f"结果：{output / 'reviews.csv'}；详细结果：{output / 'reviews.jsonl'}；需检查 {failures} 条")
     usage = summarize_usage(model.usage_calls)
     print(f"Token 用量：输入 {usage['prompt_tokens']} / 输出 {usage['completion_tokens']} / 总计 {usage['total_tokens']}")
     if not usage["usage_complete"]:

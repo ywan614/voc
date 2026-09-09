@@ -79,6 +79,9 @@ model_base_url=你的OpenAI兼容API基础URL
 
 ## 结果约定
 
+每次实际运行同时生成 `reviews.csv`：保留输入 CSV 的全部行、原始列顺序及字段字符串（包括旧 `tags`），末尾只追加 `all_tags`。该列使用 JSON 数组保存所有通过校验的完整观点（属性标签、对应原话及字符位置），不丢失标签之间的关联。成功处理但无观点为 `[]`，未处理或失败为空；`needs_review` 仅包含已通过校验的观点，被拒绝的抽取及失败详情仍见 `reviews.jsonl`。抽样/限制条数时也保留全部输入行和顺序。每条处理完成后原子更新 CSV，中断时保留已完成结果。输入已有 `all_tags` 时拒绝运行，以免覆盖原始内容。
+
+
 `reviews.jsonl` 每行对应一条评论，包含 `review_id`、原始字符串 `metadata`、`text`、`status`、`insights` 和 `rejected`。失败时增加 `error_type` 和脱敏后的详细 `error`。每条完成后立即写入并 flush，单条失败不阻断其余评论；本版本不自动断点续跑。
 
 模型仅接收 `title + "\n" + content`，不接收星级、旧 tags、theme_ids 或产品营销文案。产品名保留在 metadata，后续可据此人工确认品类。每个观点包括连续英文原话、中文属性和 `char_interval`（Python 字符索引，左闭右开，相对于完整 text）。只有与对应位置逐字匹配的结果进入 insights，无法定位或 schema 不合法的结果进入 rejected，避免混入统计。

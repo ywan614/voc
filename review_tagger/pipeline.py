@@ -92,3 +92,21 @@ def tag_review(row, model, prompt, examples):
     record["insights"], record["rejected"] = validate_extractions(text, result.extractions)
     record["status"] = "needs_review" if record["rejected"] else "ok"
     return record
+
+
+def write_tagged_csv(path, rows, records):
+    """Preserve the entire input; attach validated insights by review ID."""
+    fields = list(rows[0])
+    if "all_tags" in fields:
+        raise ValueError("输入已包含 all_tags 列，无法在保留原列的同时追加同名列")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields + ["all_tags"])
+        writer.writeheader()
+        for row in rows:
+            record = records.get(row["review_id"])
+            tags = ""
+            if record and record["status"] != "error":
+                tags = json.dumps(record["insights"], ensure_ascii=False)
+            writer.writerow({**row, "all_tags": tags})
+    temporary.replace(path)

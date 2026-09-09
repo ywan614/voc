@@ -2,12 +2,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+import csv
+import json
 from unittest.mock import patch
 
 from pydantic import ValidationError
 
 from review_tagger.config import load_settings
-from review_tagger.pipeline import load_examples, read_reviews, tag_review, validate_extractions
+from review_tagger.pipeline import load_examples, read_reviews, tag_review, validate_extractions, write_tagged_csv
 from review_tagger.schema import InsightAttributes
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,6 +61,28 @@ class TaggingTests(unittest.TestCase):
             settings = load_settings(path)
             self.assertEqual(settings.api_key, "secret%value")
             self.assertNotIn("secret", repr(settings))
+
+    def test_csv_preserves_all_rows_and_nested_tags(self):
+        rows = [{"review_id": "001", "title": '中文,"标题"', "content": "a\nb", "tags": "old"},
+                {"review_id": "002", "title": "", "content": "", "tags": ""},
+                {"review_id": "003", "title": "", "content": "", "tags": ""},
+                {"review_id": "004", "title": "", "content": "", "tags": ""}]
+        insights = [{"extraction_text": "a\nb", "attributes": {"scene": ["送礼", "日常穿着"]}}]
+        records = {"001": {"status": "needs_review", "insights": insights},
+                   "003": {"status": "ok", "insights": []},
+                   "004": {"status": "error", "insights": []}}
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "reviews.csv"
+            write_tagged_csv(path, rows, records)
+            with path.open(encoding="utf-8", newline="") as stream:
+                reader = csv.DictReader(stream)
+                self.assertEqual(reader.fieldnames, list(rows[0]) + ["all_tags"])
+                result = list(reader)
+            self.assertEqual([{k: r[k] for k in rows[0]} for r in result], rows)
+            self.assertEqual(json.loads(result[0]["all_tags"]), insights)
+            self.assertEqual([r["all_tags"] for r in result[1:]], ["", "[]", ""])
+            with self.assertRaises(ValueError):
+                write_tagged_csv(path, [{**rows[0], "all_tags": "existing"}], {})
 
     def test_malformed_csv(self):
         with TemporaryDirectory() as folder:
