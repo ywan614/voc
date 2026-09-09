@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from review_tagger.model import UsageTrackingModel
+from review_tagger.model import UsageTrackingModel, create_model
 from review_tagger.usage import summarize_usage
 from review_tagger.pipeline import tag_review, load_examples
 from pathlib import Path
@@ -40,6 +40,22 @@ class UsageTests(unittest.TestCase):
         with self.assertRaises(Exception):
             model._process_single_prompt("test", {})
         self.assertFalse(summarize_usage(model.usage_calls)["usage_complete"])
+
+    def test_sdk_retries_are_disabled(self):
+        settings = SimpleNamespace(model_name="test", api_key="secret", base_url="https://example.com/v1")
+        with patch("review_tagger.model.UsageTrackingModel") as factory:
+            client = factory.return_value._client
+            create_model(settings)
+        client.with_options.assert_called_once_with(timeout=90, max_retries=0)
+
+    def test_interrupted_request_keeps_usage_unknown(self):
+        model = self.model()
+        model._client.chat.completions.create.side_effect = KeyboardInterrupt
+        with self.assertRaises(KeyboardInterrupt):
+            model._process_single_prompt("test", {})
+        usage = summarize_usage(model.usage_calls)
+        self.assertEqual(usage["api_calls"], 1)
+        self.assertFalse(usage["usage_complete"])
 
     def test_no_thinking_is_forwarded(self):
         model = self.model()

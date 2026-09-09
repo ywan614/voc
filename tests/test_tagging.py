@@ -52,7 +52,7 @@ class TaggingTests(unittest.TestCase):
         self.assertEqual(extract.call_args.kwargs["text_or_documents"], "Thin\ntoo thin")
         self.assertFalse(extract.call_args.kwargs["resolver_params"]["suppress_parse_errors"])
         self.assertEqual(result["metadata"]["review_id"], "001")
-        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["status"], "empty_result")
 
     def test_config_percent_and_redaction(self):
         with TemporaryDirectory() as folder:

@@ -1,4 +1,5 @@
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -10,8 +11,9 @@ from .run_logging import RunLog, error_details
 
 from .config import load_settings
 from .model import create_model
-from .pipeline import load_examples, read_reviews, tag_review, write_tagged_csv
+from .pipeline import load_examples, read_reviews, write_tagged_csv
 from .prompts import build_prompt
+from .retry import iter_attempts, choose_result
 from .usage import summarize_usage
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +33,8 @@ def main():
     parser.add_argument("--seed", type=int, help="随机种子，便于复现抽样")
     parser.add_argument("--dry-run", action="store_true", help="检查输入、配置、示例，不调用 API")
     parser.add_argument("--no-thinking", action="store_true", help="关闭 Qwen 思考模式")
+    parser.add_argument("--max-attempts", type=int, default=3, help="每条最多尝试次数，含首次（默认 3）")
+    parser.add_argument("--retry-no-thinking", action="store_true", help="仅在重试时关闭 Qwen 思考模式")
     args = parser.parse_args()
     output = args.output_dir or ROOT / "data/tagging_runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     # Refuse reuse before writing any artifacts from a different run.
@@ -39,7 +43,7 @@ def main():
     except OSError as exc:
         print(f"无法创建运行目录：{output} ({type(exc).__name__})", file=sys.stderr)
         return 2
-    if any((output / name).exists() for name in ("reviews.csv", "reviews.jsonl", "run.log", "events.jsonl", "run_summary.json")):
+    if any((output / name).exists() for name in ("reviews.csv", "reviews.jsonl", "attempts.jsonl", "run.log", "events.jsonl", "run_summary.json")):
         print(f"运行目录已有结果或日志，请使用新目录：{output}", file=sys.stderr)
         return 2
     try:
@@ -57,6 +61,8 @@ def main():
 
 
 def run_batch(args, output, run):
+    if args.max_attempts <= 0:
+        raise ValueError("--max-attempts 必须大于 0")
     if args.limit is not None and args.limit <= 0:
         raise ValueError("--limit 必须大于 0")
     if args.sample is not None and args.sample <= 0:
@@ -95,66 +101,117 @@ def run_batch(args, output, run):
     if args.dry_run:
         print(f"检查通过：{len(rows)} 条评论，{len(examples)} 个示例；未调用 API。")
         return 0
+    # ponytail: input/results stay in memory; use shards or SQLite for million-row runs.
     csv_records = {}
-    write_tagged_csv(output / "reviews.csv", all_rows, csv_records)
-    # Exclusive creation prevents accidental overwrite; flush after every review.
-    with (output / "reviews.jsonl").open("x", encoding="utf-8") as stream:
-        model = create_model(settings, enable_thinking=False if args.no_thinking else None)
-        model.run_log = run
-        failures = 0
-        for index, row in enumerate(rows, 1):
-            run.review_id = row["review_id"]
-            started = time.monotonic()
-            run.event("review_started", index=index, selected_reviews=len(rows),
-                      text=row["title"] + "\n" + row["content"])
-            print(f"[{index}/{len(rows)}] 开始 review_id={row['review_id']}", flush=True)
-            start_call = len(model.usage_calls)
-            try:
-                record = tag_review(row, model, prompt, examples)
-            except Exception as exc:
-                record = {"review_id": row["review_id"], "metadata": row,
-                          "text": row["title"] + "\n" + row["content"],
-                          "status": "error", "error_type": type(exc).__name__,
-                          "error": run.clean(error_details(exc)),
-                          "insights": [], "rejected": []}
-                run.event("review_failed", error=record["error"])
-                print(f"失败 review_id={row['review_id']}: {record['error']['message']}", file=sys.stderr)
-                print(record["error"]["traceback"], file=sys.stderr)
-            calls = model.usage_calls[start_call:]
-            record["usage"] = summarize_usage(calls)
-            record["api_usage"] = calls
-            failures += record["status"] in {"error", "needs_review"}
-            record["duration_seconds"] = round(time.monotonic() - started, 3)
-            for rejected in record["rejected"]:
-                run.event("extraction_rejected", **rejected)
-                print(f"需复核 review_id={row['review_id']}: {json.dumps(rejected, ensure_ascii=False)}", file=sys.stderr)
-            stream.write(json.dumps(run.clean(record), ensure_ascii=False) + "\n")
-            stream.flush()
-            csv_records[row["review_id"]] = record
-            write_tagged_csv(output / "reviews.csv", all_rows, csv_records)
-            run.event("review_finished", index=index, status=record["status"],
-                      duration_seconds=record["duration_seconds"], usage=record["usage"],
-                      accepted_count=len(record["insights"]), rejected_count=len(record["rejected"]))
-            summary = {
-                "input": str(args.input.resolve()), "model": settings.model_name,
-                "thinking_mode": "disabled" if args.no_thinking else "provider_default",
-                "sample_seed": seed if args.sample else None,
-                "selected_review_ids": [r["review_id"] for r in rows],
-                "processed_reviews": index, "selected_reviews": len(rows),
-                "reviews_needing_attention": failures,
-                "usage": summarize_usage(model.usage_calls),
-            }
-            temporary = output / "run_summary.json.tmp"
-            temporary.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            temporary.replace(output / "run_summary.json")
-            print(f"[{index}/{len(rows)}] review_id={row['review_id']} {record['status']} tokens={record['usage']['total_tokens']}", flush=True)
+    model = None
+    state = "running"
+    total_attempts = 0
+    status_counts = Counter()
+    run_usage = summarize_usage([])
+
+    def save_summary():
+        summary = {
+            "input": str(args.input.resolve()), "model": settings.model_name,
+            "thinking_mode": "disabled" if args.no_thinking else "provider_default",
+            "retry_no_thinking": args.retry_no_thinking, "max_attempts": args.max_attempts,
+            "sample_seed": seed if args.sample else None,
+            "processed_reviews": len(csv_records), "selected_reviews": len(rows),
+            "status_counts": dict(status_counts), "total_attempts": total_attempts,
+            "reviews_needing_attention": sum(v for k, v in status_counts.items() if k not in {"ok", "empty"}),
+            "state": state, "usage": run_usage,
+        }
+        temporary = output / "run_summary.json.tmp"
+        temporary.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(output / "run_summary.json")
+
+    try:
+        with (output / "reviews.jsonl").open("x", encoding="utf-8") as stream, \
+                (output / "attempts.jsonl").open("x", encoding="utf-8") as attempts_stream:
+            model = create_model(settings, enable_thinking=False if args.no_thinking else None)
+            model.run_log = run
+            for index, row in enumerate(rows, 1):
+                run.review_id = row["review_id"]
+                started = time.monotonic()
+                run.event("review_started", index=index, selected_reviews=len(rows),
+                          text=row["title"] + "\n" + row["content"])
+                print(f"[{index}/{len(rows)}] 开始 review_id={row['review_id']}", flush=True)
+                start_call = len(model.usage_calls)
+                best = last = None
+                interrupted = False
+                try:
+                    for attempt in iter_attempts(row, model, prompt, examples,
+                                                 max_attempts=args.max_attempts,
+                                                 retry_no_thinking=args.retry_no_thinking):
+                        attempts_stream.write(json.dumps(run.clean(attempt), ensure_ascii=False) + "\n")
+                        attempts_stream.flush()
+                        total_attempts += 1
+                        last = attempt
+                        best = choose_result(best, attempt)
+                        run.event("attempt_finished", attempt=attempt["attempt"], status=attempt["status"],
+                                  thinking_mode=attempt["thinking_mode"], usage=attempt["usage"])
+                        if attempt["status"] == "error":
+                            run.event("review_failed", attempt=attempt["attempt"], error=attempt["error"])
+                            print(f"失败 review_id={row['review_id']}: {attempt['error']['message']}", file=sys.stderr)
+                            print(attempt["error"]["traceback"], file=sys.stderr)
+                        for rejected in attempt["rejected"]:
+                            run.event("extraction_rejected", attempt=attempt["attempt"], **rejected)
+                            print(f"需复核 review_id={row['review_id']}: {json.dumps(rejected, ensure_ascii=False)}", file=sys.stderr)
+                        print(f"  尝试 {attempt['attempt']}/{args.max_attempts}: {attempt['status']}", flush=True)
+                except KeyboardInterrupt:
+                    interrupted = True
+                    raise
+                finally:
+                    if best is not None:
+                        calls = model.usage_calls[start_call:]
+                        record = {**best, "selected_attempt": best["attempt"],
+                                  "attempt_count": last["attempt"], "last_status": last["status"],
+                                  "retry_action": last["retry_action"],
+                                  "interrupted": interrupted,
+                                  "retry_exhausted": not interrupted and last["retry_action"] == "retry"
+                                                     and last["attempt"] == args.max_attempts,
+                                  "duration_seconds": round(time.monotonic() - started, 3),
+                                  "usage": summarize_usage(calls), "api_usage": calls}
+                        # Keep the original fields for CSV, independent of diagnostic redaction.
+                        csv_records[row["review_id"]] = record
+                        stream.write(json.dumps(run.clean(record), ensure_ascii=False) + "\n")
+                        stream.flush()
+                        status_counts[record["status"]] += 1
+                        for key, value in record["usage"].items():
+                            if key == "usage_complete":
+                                run_usage[key] = run_usage[key] and value
+                            else:
+                                run_usage[key] += value
+                        run.event("review_finished", index=index, status=record["status"],
+                                  selected_attempt=record["selected_attempt"], attempt_count=record["attempt_count"],
+                                  duration_seconds=record["duration_seconds"], usage=record["usage"],
+                                  accepted_count=len(record["insights"]), rejected_count=len(record["rejected"]))
+                        save_summary()
+                if last["retry_action"] == "abort":
+                    state = "aborted"
+                    run.event("batch_aborted", error=last["error"])
+                    print("服务配置或请求被拒绝，已停止后续处理；详见 attempts.jsonl。", file=sys.stderr)
+                    break
+                print(f"[{index}/{len(rows)}] review_id={row['review_id']} {record['status']} tokens={record['usage']['total_tokens']}", flush=True)
+            else:
+                state = "completed"
+    except KeyboardInterrupt:
+        state = "interrupted"
+        raise
+    except Exception:
+        state = "failed"
+        raise
+    finally:
+        if model is not None:
+            run_usage = summarize_usage(model.usage_calls)
+        write_tagged_csv(output / "reviews.csv", all_rows, csv_records)
+        save_summary()
     run.review_id = None
+    failures = sum(v for k, v in status_counts.items() if k not in {"ok", "empty"})
     print(f"结果：{output / 'reviews.csv'}；详细结果：{output / 'reviews.jsonl'}；需检查 {failures} 条")
-    usage = summarize_usage(model.usage_calls)
-    print(f"Token 用量：输入 {usage['prompt_tokens']} / 输出 {usage['completion_tokens']} / 总计 {usage['total_tokens']}")
-    if not usage["usage_complete"]:
+    print(f"Token 用量：输入 {run_usage['prompt_tokens']} / 输出 {run_usage['completion_tokens']} / 总计 {run_usage['total_tokens']}")
+    if not run_usage["usage_complete"]:
         print("部分调用未返回完整 usage；上述数值仅为已报告用量。")
-    return 1 if failures else 0
+    return 2 if state == "aborted" else 1 if failures else 0
 
 
 if __name__ == "__main__":

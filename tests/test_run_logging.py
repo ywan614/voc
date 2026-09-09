@@ -30,7 +30,7 @@ class RunLoggingTests(unittest.TestCase):
 
     def invoke(self, *extra):
         args = ["review_tagger", "--config", str(self.config), "--input", str(self.input),
-                "--output-dir", str(self.output), *extra]
+                "--output-dir", str(self.output), "--max-attempts", "1", *extra]
         with patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return main()
 
@@ -71,7 +71,7 @@ class RunLoggingTests(unittest.TestCase):
                     raise ValueError("provider wrapper") from exc
             return {"review_id": "002", "status": "ok", "insights": [], "rejected": []}
 
-        with patch("review_tagger.__main__.create_model", return_value=model), patch("review_tagger.__main__.tag_review", side_effect=tag):
+        with patch("review_tagger.__main__.create_model", return_value=model), patch("review_tagger.retry.tag_review", side_effect=tag):
             self.assertEqual(self.invoke(), 1)
         records = [json.loads(line) for line in (self.output / "reviews.jsonl").read_text().splitlines()]
         self.assertEqual([row["status"] for row in records], ["error", "ok"])
@@ -139,7 +139,7 @@ class RunLoggingTests(unittest.TestCase):
         self.assertEqual(json.loads((self.output / "reviews.jsonl").read_text())["status"], "needs_review")
 
     def test_interruption_and_startup_failure_are_logged(self):
-        with patch("review_tagger.__main__.create_model", return_value=SimpleNamespace(usage_calls=[])), patch("review_tagger.__main__.tag_review", side_effect=KeyboardInterrupt):
+        with patch("review_tagger.__main__.create_model", return_value=SimpleNamespace(usage_calls=[])), patch("review_tagger.retry.tag_review", side_effect=KeyboardInterrupt):
             self.assertEqual(self.invoke(), 130)
         self.assertEqual(self.events()[-1]["event"], "run_interrupted")
         self.assertEqual(self.events()[-1]["review_id"], "001")

@@ -25,7 +25,7 @@ class UsageTrackingModel(OpenAILanguageModel):
             self.run_log.event("api_request", parameters=params)
         try:
             response = self._client.chat.completions.create(**params)
-        except Exception as exc:
+        except (Exception, KeyboardInterrupt) as exc:
             details = error_details(exc)
             if self.run_log:
                 details = self.run_log.clean(details)
@@ -33,6 +33,8 @@ class UsageTrackingModel(OpenAILanguageModel):
                                    duration_seconds=round(time.monotonic() - started, 3))
             self.usage_calls.append({"status": "error", "usage": None,
                                      "error_type": type(exc).__name__, "error": details})
+            if isinstance(exc, KeyboardInterrupt):
+                raise
             raise exceptions.InferenceRuntimeError(
                 "Qwen API request failed", original=exc
             ) from exc
@@ -58,5 +60,5 @@ def create_model(settings: ModelSettings, *, enable_thinking=None):
         enable_thinking=enable_thinking,
     )
     # LangExtract 1.6 does not forward timeout/retries to the SDK constructor.
-    model._client = model._client.with_options(timeout=90, max_retries=2)
+    model._client = model._client.with_options(timeout=90, max_retries=0)
     return model

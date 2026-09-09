@@ -90,7 +90,8 @@ def tag_review(row, model, prompt, examples):
         extraction_passes=1, show_progress=False,
     )
     record["insights"], record["rejected"] = validate_extractions(text, result.extractions)
-    record["status"] = "needs_review" if record["rejected"] else "ok"
+    record["status"] = ("needs_review" if record["rejected"] else
+                        "ok" if record["insights"] else "empty_result")
     return record
 
 
